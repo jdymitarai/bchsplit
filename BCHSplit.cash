@@ -1,0 +1,45 @@
+pragma cashscript ^0.10.0;
+
+/**
+ * @title BCHSplit
+ * @notice Onchain Revenue & Payment Splitter for Bitcoin Cash (BCH) and CashTokens
+ * @dev Implements proportional basis points (BPS) distribution across verified recipient outputs.
+ *      Enforces UTXO introspection to ensure strict covenant adherence (tx.outputs validation).
+ */
+contract BCHSplit(
+    bytes20 recipientA,
+    int shareA, // in basis points, e.g. 6000 = 60%
+    bytes20 recipientB,
+    int shareB, // in basis points, e.g. 4000 = 40%
+    int dustThreshold // e.g. 1000 satoshis
+) {
+    /**
+     * @notice Distribute incoming BCH according to predetermined shares
+     * @dev Uses CashScript Covenant Introspection to guarantee exact outputs
+     */
+    function split() {
+        // Enforce total basis points equals 10,000 (100%)
+        require(shareA + shareB == 10000);
+
+        // Determine total incoming satoshis from contract inputs
+        int totalValue = tx.inputs[this.activeInputIndex].value;
+
+        // Calculate proportional payouts
+        int amountA = (totalValue * shareA) / 10000;
+        int amountB = totalValue - amountA;
+
+        // Ensure minimum dust threshold to prevent standardness rejection
+        require(amountA >= dustThreshold);
+        require(amountB >= dustThreshold);
+
+        // Covenant requirement: output 0 must send amountA to recipientA Locking Bytecode (P2PKH)
+        bytes25 lockingBytecodeA = new LockingBytecodeP2PKH(recipientA);
+        require(tx.outputs[0].lockingBytecode == lockingBytecodeA);
+        require(tx.outputs[0].value == amountA);
+
+        // Covenant requirement: output 1 must send amountB to recipientB Locking Bytecode (P2PKH)
+        bytes25 lockingBytecodeB = new LockingBytecodeP2PKH(recipientB);
+        require(tx.outputs[1].lockingBytecode == lockingBytecodeB);
+        require(tx.outputs[1].value == amountB);
+    }
+}
